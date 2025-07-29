@@ -31,11 +31,7 @@ import static java.util.Collections.singletonList;
 import static org.apache.kafka.common.config.ConfigDef.NO_DEFAULT_VALUE;
 
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -56,6 +52,7 @@ import com.mongodb.kafka.connect.sink.processor.id.strategy.FullKeyStrategy;
 import com.mongodb.kafka.connect.sink.processor.id.strategy.IdStrategy;
 import com.mongodb.kafka.connect.sink.processor.id.strategy.PartialKeyStrategy;
 import com.mongodb.kafka.connect.sink.processor.id.strategy.ProvidedInKeyStrategy;
+import com.mongodb.kafka.connect.sink.writemodel.strategy.CustomWriteModelStrategy;
 import com.mongodb.kafka.connect.sink.writemodel.strategy.DeleteOneDefaultStrategy;
 import com.mongodb.kafka.connect.sink.writemodel.strategy.WriteModelStrategy;
 import com.mongodb.kafka.connect.util.ConfigHelper;
@@ -167,11 +164,14 @@ public class MongoSinkTopicConfig extends AbstractConfig {
   static final boolean DELETE_ON_NULL_VALUES_DEFAULT = false;
 
   public static final String WRITEMODEL_STRATEGY_CONFIG = "writemodel.strategy";
+  public static final String CUSTOM_WRITEMODEL_STRATEGY_CONFIG = "custom.writemodel.strategy";
   private static final String WRITEMODEL_STRATEGY_DISPLAY = "The writeModel strategy";
   private static final String WRITEMODEL_STRATEGY_DOC =
       "The class the handles how build the write models for the sink documents";
   static final String WRITEMODEL_STRATEGY_DEFAULT =
       "com.mongodb.kafka.connect.sink.writemodel.strategy.DefaultWriteModelStrategy";
+  static final String CUSTOM_WRITEMODEL_STRATEGY_DEFAULT =
+      "com.mongodb.kafka.connect.sink.writemodel.strategy.CustomInsertManyWriteModelStrategy";
 
   public static final String DELETE_WRITEMODEL_STRATEGY_CONFIG = "delete.writemodel.strategy";
   private static final String DELETE_WRITEMODEL_STRATEGY_DISPLAY = "The delete writeModel strategy";
@@ -424,6 +424,7 @@ public class MongoSinkTopicConfig extends AbstractConfig {
           MongoSinkTopicConfig::getIdStrategy,
           MongoSinkTopicConfig::getPostProcessors,
           MongoSinkTopicConfig::getWriteModelStrategy,
+          MongoSinkTopicConfig::getCustomWriteModelStrategy,
           MongoSinkTopicConfig::getDeleteWriteModelStrategy,
           MongoSinkTopicConfig::getRateLimitSettings,
           MongoSinkTopicConfig::getCdcHandler);
@@ -432,6 +433,7 @@ public class MongoSinkTopicConfig extends AbstractConfig {
   private NamespaceMapper namespaceMapper;
   private IdStrategy idStrategy;
   private PostProcessors postProcessors;
+  private CustomWriteModelStrategy customWriteModelStrategy;
   private WriteModelStrategy writeModelStrategy;
   private WriteModelStrategy deleteOneWriteModelStrategy;
   private RateLimitSettings rateLimitSettings;
@@ -455,12 +457,7 @@ public class MongoSinkTopicConfig extends AbstractConfig {
 
   static final ConfigDef CONFIG =
       createConfigDef()
-          .define(
-              TOPIC_CONFIG,
-              ConfigDef.Type.STRING,
-              NO_DEFAULT_VALUE,
-              ConfigDef.Importance.HIGH,
-              "Topic name");
+          .define(TOPIC_CONFIG, Type.STRING, NO_DEFAULT_VALUE, Importance.HIGH, "Topic name");
 
   public String getTopic() {
     return topic;
@@ -532,6 +529,14 @@ public class MongoSinkTopicConfig extends AbstractConfig {
     return writeModelStrategy;
   }
 
+  public CustomWriteModelStrategy getCustomWriteModelStrategy() {
+    if (customWriteModelStrategy == null) {
+      customWriteModelStrategy =
+          getCustomWriteModelStrategyFromConfig(CUSTOM_WRITEMODEL_STRATEGY_CONFIG);
+    }
+    return customWriteModelStrategy;
+  }
+
   public Optional<WriteModelStrategy> getDeleteWriteModelStrategy() {
     if (!getBoolean(DELETE_ON_NULL_VALUES_CONFIG)) {
       return Optional.empty();
@@ -575,6 +580,11 @@ public class MongoSinkTopicConfig extends AbstractConfig {
   WriteModelStrategy getWriteModelStrategyFromConfig(final String strategyConfig) {
     return configureInstance(
         createInstance(strategyConfig, getString(strategyConfig), WriteModelStrategy.class));
+  }
+
+  CustomWriteModelStrategy getCustomWriteModelStrategyFromConfig(final String strategyConfig) {
+    return configureInstance(
+        createInstance(strategyConfig, getString(strategyConfig), CustomWriteModelStrategy.class));
   }
 
   Optional<CdcHandler> getCdcHandler() {
@@ -725,248 +735,259 @@ public class MongoSinkTopicConfig extends AbstractConfig {
     int orderInGroup = 0;
     configDef.define(
         DATABASE_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         NO_DEFAULT_VALUE,
         new ConfigDef.NonEmptyString(),
-        ConfigDef.Importance.HIGH,
+        Importance.HIGH,
         DATABASE_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         DATABASE_DISPLAY);
     configDef.define(
         COLLECTION_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         COLLECTION_DEFAULT,
-        ConfigDef.Importance.HIGH,
+        Importance.HIGH,
         COLLECTION_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         COLLECTION_DISPLAY);
 
     group = "Namespace mapping";
     orderInGroup = 0;
     configDef.define(
         NAMESPACE_MAPPER_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         NAMESPACE_MAPPER_DEFAULT,
         Validators.matching(FULLY_QUALIFIED_CLASS_NAME),
-        ConfigDef.Importance.HIGH,
+        Importance.HIGH,
         NAMESPACE_MAPPER_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.LONG,
+        Width.LONG,
         NAMESPACE_MAPPER_DISPLAY);
     configDef.define(
         FIELD_KEY_DATABASE_NAMESPACE_MAPPER_CONFIG,
         Type.STRING,
         FIELD_KEY_DATABASE_NAMESPACE_MAPPER_DEFAULT,
-        ConfigDef.Importance.MEDIUM,
+        Importance.MEDIUM,
         FIELD_KEY_DATABASE_NAMESPACE_MAPPER_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         FIELD_KEY_DATABASE_NAMESPACE_MAPPER_DISPLAY);
     configDef.define(
         FIELD_KEY_COLLECTION_NAMESPACE_MAPPER_CONFIG,
         Type.STRING,
         FIELD_KEY_COLLECTION_NAMESPACE_MAPPER_DEFAULT,
-        ConfigDef.Importance.MEDIUM,
+        Importance.MEDIUM,
         FIELD_KEY_COLLECTION_NAMESPACE_MAPPER_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         FIELD_KEY_COLLECTION_NAMESPACE_MAPPER_DISPLAY);
     configDef.define(
         FIELD_VALUE_DATABASE_NAMESPACE_MAPPER_CONFIG,
         Type.STRING,
         FIELD_VALUE_DATABASE_NAMESPACE_MAPPER_DEFAULT,
-        ConfigDef.Importance.MEDIUM,
+        Importance.MEDIUM,
         FIELD_VALUE_DATABASE_NAMESPACE_MAPPER_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         FIELD_VALUE_DATABASE_NAMESPACE_MAPPER_DISPLAY);
     configDef.define(
         FIELD_VALUE_COLLECTION_NAMESPACE_MAPPER_CONFIG,
         Type.STRING,
         FIELD_VALUE_COLLECTION_NAMESPACE_MAPPER_DEFAULT,
-        ConfigDef.Importance.MEDIUM,
+        Importance.MEDIUM,
         FIELD_VALUE_COLLECTION_NAMESPACE_MAPPER_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         FIELD_VALUE_COLLECTION_NAMESPACE_MAPPER_DISPLAY);
     configDef.define(
         FIELD_NAMESPACE_MAPPER_ERROR_IF_INVALID_CONFIG,
         Type.BOOLEAN,
         FIELD_NAMESPACE_MAPPER_ERROR_IF_INVALID_DEFAULT,
-        ConfigDef.Importance.MEDIUM,
+        Importance.MEDIUM,
         FIELD_NAMESPACE_MAPPER_ERROR_IF_INVALID_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         FIELD_NAMESPACE_MAPPER_ERROR_IF_INVALID_DISPLAY);
 
     group = "Writes";
     orderInGroup = 0;
     configDef.define(
         DELETE_ON_NULL_VALUES_CONFIG,
-        ConfigDef.Type.BOOLEAN,
+        Type.BOOLEAN,
         DELETE_ON_NULL_VALUES_DEFAULT,
-        ConfigDef.Importance.MEDIUM,
+        Importance.MEDIUM,
         DELETE_ON_NULL_VALUES_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         DELETE_ON_NULL_VALUES_DISPLAY);
     configDef.define(
         WRITEMODEL_STRATEGY_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         WRITEMODEL_STRATEGY_DEFAULT,
         Validators.matching(FULLY_QUALIFIED_CLASS_NAME),
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         WRITEMODEL_STRATEGY_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
+        WRITEMODEL_STRATEGY_DISPLAY);
+    configDef.define(
+        CUSTOM_WRITEMODEL_STRATEGY_CONFIG,
+        Type.STRING,
+        CUSTOM_WRITEMODEL_STRATEGY_DEFAULT,
+        Validators.matching(FULLY_QUALIFIED_CLASS_NAME),
+        Importance.LOW,
+        WRITEMODEL_STRATEGY_DOC,
+        group,
+        ++orderInGroup,
+        Width.MEDIUM,
         WRITEMODEL_STRATEGY_DISPLAY);
     configDef.define(
         DELETE_WRITEMODEL_STRATEGY_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         DELETE_WRITEMODEL_STRATEGY_DEFAULT,
         Validators.matching(FULLY_QUALIFIED_CLASS_NAME),
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         WRITEMODEL_STRATEGY_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         DELETE_WRITEMODEL_STRATEGY_DISPLAY);
     configDef.define(
         MAX_BATCH_SIZE_CONFIG,
-        ConfigDef.Type.INT,
+        Type.INT,
         MAX_BATCH_SIZE_DEFAULT,
         ConfigDef.Range.atLeast(0),
-        ConfigDef.Importance.MEDIUM,
+        Importance.MEDIUM,
         MAX_BATCH_SIZE_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         MAX_BATCH_SIZE_DISPLAY);
     configDef.define(
         BULK_WRITE_ORDERED_CONFIG,
-        ConfigDef.Type.BOOLEAN,
+        Type.BOOLEAN,
         BULK_WRITE_ORDERED_DEFAULT,
-        ConfigDef.Importance.MEDIUM,
+        Importance.MEDIUM,
         BULK_WRITE_ORDERED_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         BULK_WRITE_ORDERED_DISPLAY);
     configDef.define(
         RATE_LIMITING_TIMEOUT_CONFIG,
-        ConfigDef.Type.INT,
+        Type.INT,
         RATE_LIMITING_TIMEOUT_DEFAULT,
         ConfigDef.Range.atLeast(0),
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         RATE_LIMITING_TIMEOUT_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         RATE_LIMITING_TIMEOUT_DISPLAY);
     configDef.define(
         RATE_LIMITING_EVERY_N_CONFIG,
-        ConfigDef.Type.INT,
+        Type.INT,
         RATE_LIMITING_EVERY_N_DEFAULT,
         ConfigDef.Range.atLeast(0),
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         RATE_LIMITING_EVERY_N_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         RATE_LIMITING_EVERY_N_DISPLAY);
 
     group = "Post Processing";
     orderInGroup = 0;
     configDef.define(
         POST_PROCESSOR_CHAIN_CONFIG,
-        ConfigDef.Type.LIST,
+        Type.LIST,
         POST_PROCESSOR_CHAIN_DEFAULT,
         Validators.listMatchingPattern(FULLY_QUALIFIED_CLASS_NAME),
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         POST_PROCESSOR_CHAIN_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         POST_PROCESSOR_CHAIN_DISPLAY);
     configDef.define(
         KEY_PROJECTION_TYPE_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         KEY_PROJECTION_TYPE_DEFAULT,
         Validators.EnumValidatorAndRecommender.in(FieldProjectionType.values()),
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         KEY_PROJECTION_TYPE_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         KEY_PROJECTION_TYPE_DISPLAY,
         Validators.EnumValidatorAndRecommender.in(FieldProjectionType.values()));
     configDef.define(
         KEY_PROJECTION_LIST_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         KEY_PROJECTION_LIST_DEFAULT,
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         KEY_PROJECTION_LIST_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         KEY_PROJECTION_LIST_DISPLAY,
         singletonList(KEY_PROJECTION_TYPE_CONFIG));
     configDef.define(
         VALUE_PROJECTION_TYPE_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         VALUE_PROJECTION_TYPE_DEFAULT,
         Validators.EnumValidatorAndRecommender.in(FieldProjectionType.values()),
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         VALUE_PROJECTION_TYPE_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         VALUE_PROJECTION_TYPE_DISPLAY,
         Validators.EnumValidatorAndRecommender.in(FieldProjectionType.values()));
     configDef.define(
         VALUE_PROJECTION_LIST_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         VALUE_PROJECTION_LIST_DEFAULT,
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         VALUE_PROJECTION_LIST_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         VALUE_PROJECTION_LIST_DISPLAY,
         singletonList(VALUE_PROJECTION_TYPE_CONFIG));
     configDef.define(
         FIELD_RENAMER_MAPPING_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         FIELD_RENAMER_MAPPING_DEFAULT,
         errorCheckingValueValidator("A valid JSON array", ConfigHelper::jsonArrayFromString),
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         FIELD_RENAMER_MAPPING_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         FIELD_RENAMER_MAPPING_DISPLAY);
     configDef.define(
         FIELD_RENAMER_REGEXP_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         FIELD_RENAMER_REGEXP_DEFAULT,
         errorCheckingValueValidator("A valid JSON array", ConfigHelper::jsonArrayFromString),
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         FIELD_RENAMER_REGEXP_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         FIELD_RENAMER_REGEXP_DISPLAY);
 
     group = "Id Strategies";
@@ -974,89 +995,89 @@ public class MongoSinkTopicConfig extends AbstractConfig {
     // Id strategies
     configDef.define(
         DOCUMENT_ID_STRATEGY_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         DOCUMENT_ID_STRATEGY_DEFAULT,
         Validators.emptyString().or(Validators.matching(FULLY_QUALIFIED_CLASS_NAME)),
-        ConfigDef.Importance.HIGH,
+        Importance.HIGH,
         DOCUMENT_ID_STRATEGY_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         DOCUMENT_ID_STRATEGY_DISPLAY);
 
     configDef.define(
         DOCUMENT_ID_STRATEGY_OVERWRITE_EXISTING_CONFIG,
-        ConfigDef.Type.BOOLEAN,
+        Type.BOOLEAN,
         DOCUMENT_ID_STRATEGY_OVERWRITE_EXISTING_DEFAULT,
-        ConfigDef.Importance.HIGH,
+        Importance.HIGH,
         DOCUMENT_ID_STRATEGY_OVERWRITE_EXISTING_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         DOCUMENT_ID_STRATEGY_OVERWRITE_EXISTING_DISPLAY);
 
     configDef.define(
         DOCUMENT_ID_STRATEGY_UUID_FORMAT_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         DOCUMENT_ID_STRATEGY_UUID_FORMAT_DEFAULT,
         Validators.EnumValidatorAndRecommender.in(UuidBsonFormat.values()),
-        ConfigDef.Importance.HIGH,
+        Importance.HIGH,
         DOCUMENT_ID_STRATEGY_UUID_FORMAT_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         DOCUMENT_ID_STRATEGY_UUID_FORMAT_DISPLAY,
         Validators.EnumValidatorAndRecommender.in(UuidBsonFormat.values()));
 
     configDef.define(
         DOCUMENT_ID_STRATEGY_PARTIAL_KEY_PROJECTION_TYPE_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         DOCUMENT_ID_STRATEGY_PARTIAL_KEY_PROJECTION_TYPE_DEFAULT,
         Validators.emptyString()
             .or(Validators.EnumValidatorAndRecommender.in(FieldProjectionType.values())),
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         DOCUMENT_ID_STRATEGY_PARTIAL_KEY_PROJECTION_TYPE_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         DOCUMENT_ID_STRATEGY_PARTIAL_KEY_PROJECTION_TYPE_DISPLAY,
         Validators.EnumValidatorAndRecommender.in(FieldProjectionType.values()));
 
     configDef.define(
         DOCUMENT_ID_STRATEGY_PARTIAL_KEY_PROJECTION_LIST_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         DOCUMENT_ID_STRATEGY_PARTIAL_KEY_PROJECTION_LIST_DEFAULT,
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         DOCUMENT_ID_STRATEGY_PARTIAL_KEY_PROJECTION_LIST_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         DOCUMENT_ID_STRATEGY_PARTIAL_KEY_PROJECTION_LIST_DISPLAY,
         singletonList(DOCUMENT_ID_STRATEGY_PARTIAL_KEY_PROJECTION_TYPE_CONFIG));
 
     configDef.define(
         DOCUMENT_ID_STRATEGY_PARTIAL_VALUE_PROJECTION_TYPE_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         DOCUMENT_ID_STRATEGY_PARTIAL_VALUE_PROJECTION_TYPE_DEFAULT,
         Validators.emptyString()
             .or(Validators.EnumValidatorAndRecommender.in(FieldProjectionType.values())),
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         DOCUMENT_ID_STRATEGY_PARTIAL_VALUE_PROJECTION_TYPE_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         DOCUMENT_ID_STRATEGY_PARTIAL_VALUE_PROJECTION_TYPE_DISPLAY,
         Validators.EnumValidatorAndRecommender.in(FieldProjectionType.values()));
 
     configDef.define(
         DOCUMENT_ID_STRATEGY_PARTIAL_VALUE_PROJECTION_LIST_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         DOCUMENT_ID_STRATEGY_PARTIAL_VALUE_PROJECTION_LIST_DEFAULT,
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         DOCUMENT_ID_STRATEGY_PARTIAL_VALUE_PROJECTION_LIST_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         DOCUMENT_ID_STRATEGY_PARTIAL_VALUE_PROJECTION_LIST_DISPLAY,
         singletonList(DOCUMENT_ID_STRATEGY_PARTIAL_VALUE_PROJECTION_TYPE_CONFIG));
 
@@ -1111,96 +1132,96 @@ public class MongoSinkTopicConfig extends AbstractConfig {
     orderInGroup = 0;
     configDef.define(
         CHANGE_DATA_CAPTURE_HANDLER_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         CHANGE_DATA_CAPTURE_HANDLER_DEFAULT,
         Validators.emptyString().or(Validators.matching(FULLY_QUALIFIED_CLASS_NAME)),
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         CHANGE_DATA_CAPTURE_HANDLER_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         CHANGE_DATA_CAPTURE_HANDLER_DISPLAY);
 
     group = "Time series";
     orderInGroup = 0;
     configDef.define(
         TIMESERIES_TIMEFIELD_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         TIMESERIES_TIMEFIELD_DEFAULT,
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         TIMESERIES_TIMEFIELD_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         TIMESERIES_TIMEFIELD_DISPLAY);
     configDef.define(
         TIMESERIES_METAFIELD_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         TIMESERIES_METAFIELD_DEFAULT,
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         TIMESERIES_METAFIELD_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         TIMESERIES_METAFIELD_DISPLAY);
     configDef.define(
         TIMESERIES_EXPIRE_AFTER_SECONDS_CONFIG,
-        ConfigDef.Type.LONG,
+        Type.LONG,
         TIMESERIES_EXPIRE_AFTER_SECONDS_DEFAULT,
         ConfigDef.Range.atLeast(0),
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         TIMESERIES_EXPIRE_AFTER_SECONDS_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         TIMESERIES_EXPIRE_AFTER_SECONDS_DISPLAY);
     configDef.define(
         TIMESERIES_GRANULARITY_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         EMPTY_STRING,
         Validators.emptyString()
             .or(Validators.EnumValidatorAndRecommender.in(TimeSeriesGranularity.values())),
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         TIMESERIES_GRANULARITY_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         TIMESERIES_GRANULARITY_DISPLAY);
     configDef.define(
         TIMESERIES_TIMEFIELD_AUTO_CONVERSION_CONFIG,
-        ConfigDef.Type.BOOLEAN,
+        Type.BOOLEAN,
         false,
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         TIMESERIES_TIMEFIELD_AUTO_CONVERSION_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         TIMESERIES_TIMEFIELD_AUTO_CONVERSION_DISPLAY);
     configDef.define(
         TIMESERIES_TIMEFIELD_AUTO_CONVERSION_DATE_FORMAT_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         TIMESERIES_TIMEFIELD_AUTO_CONVERSION_DATE_FORMAT_DEFAULT,
         errorCheckingValueValidator(
             "A valid DateTimeFormatter format", DateTimeFormatter::ofPattern),
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         TIMESERIES_TIMEFIELD_AUTO_CONVERSION_DATE_FORMAT_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         TIMESERIES_TIMEFIELD_AUTO_CONVERSION_DATE_FORMAT_DISPLAY);
     configDef.define(
         TIMESERIES_TIMEFIELD_AUTO_CONVERSION_LOCALE_LANGUAGE_TAG_CONFIG,
-        ConfigDef.Type.STRING,
+        Type.STRING,
         EMPTY_STRING,
         emptyString()
             .or(
                 errorCheckingValueValidator(
                     "A valid Locale language tag format", Locale::forLanguageTag)),
-        ConfigDef.Importance.LOW,
+        Importance.LOW,
         TIMESERIES_TIMEFIELD_AUTO_CONVERSION_LOCALE_LANGUAGE_TAG_DOC,
         group,
         ++orderInGroup,
-        ConfigDef.Width.MEDIUM,
+        Width.MEDIUM,
         TIMESERIES_TIMEFIELD_AUTO_CONVERSION_LOCALE_LANGUAGE_TAG_DISPLAY);
     return configDef;
   }
